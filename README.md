@@ -12,7 +12,7 @@ Tested in Ubuntu 22:
     python3 -m venv env
     source env/bin/activate
 
-    pip3 install python-gedcom pygraphviz`
+    pip3 install python-gedcom pygraphviz
 
 ## Usage
 See `./gedcom_plotter.py --help`

@@ -1,0 +1,2 @@
+pygraphviz==1.11
+python-gedcom==1.0.0

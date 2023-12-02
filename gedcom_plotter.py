@@ -269,31 +269,31 @@ def gedcom_to_graph(gedcom_filename, label='', labelloc="t", labelsize=100,
 
     # Add all indiviudals to graph
     n_people = 0
-    for element in root_child_elements:
-        if isinstance(element, IndividualElement):
+    for person in root_child_elements:
+        if isinstance(person, IndividualElement):
             n_people += 1
 
     print(f'Family tree contains {n_people} people.')
 
     print('Creating nodes...')
     #counter = 0
-    for element in root_child_elements:
+    for person in root_child_elements:
 
         #print('\r' + str(int(counter * 100 / n_people)) + '%', end='')
         #counter += 1
 
-        if isinstance(element, IndividualElement):
+        if isinstance(person, IndividualElement):
 
-            if element.get_gender() == 'M':
+            if person.get_gender() == 'M':
                 color = '#bce0f0'
-            elif element.get_gender() == 'F':
+            elif person.get_gender() == 'F':
                 color = '#f8e3eb'
             else:
                 color = '#fbfbcc'
 
-            name = format_name(element, node_width, node_height, ns)
+            name = format_name(person, node_width, node_height, ns)
 
-            graph.add_node(element, label=name, shape='box', style='rounded,filled',
+            graph.add_node(person, label=name, shape='box', style='rounded,filled',
                            fixedsize='true', width=node_width, height=node_height,
                            fillcolor=color)
 
@@ -312,7 +312,8 @@ def gedcom_to_graph(gedcom_filename, label='', labelloc="t", labelsize=100,
              'RL': {'head': 'e',
                     'tail': 'w'}}
 
-    # Add edges and subgraphs for spouses
+    # Identify all married persons and put them in the same cluster.
+    # Not trivial if more than one of the persons maried multiple times
     counter = 1
     for family in root_child_elements:
 
@@ -323,28 +324,58 @@ def gedcom_to_graph(gedcom_filename, label='', labelloc="t", labelsize=100,
             if len(parents) < 1:
                 continue
 
-            element = parents[0]
+            person = parents[0]
+            person_id = str(person).strip()
 
-            for family_member in parents[1:]:
+            for spouse in parents[1:]:
+
+                spouse_id = str(spouse).strip()
 
                 # add edge for spouse
 
                 sg_name = None
-                if element in sub_graphs:
-                    sg_name = sub_graphs[element]
-                if family_member in sub_graphs:
-                    sg_name = sub_graphs[family_member]
+                if person_id in sub_graphs:
+                    sg_name = sub_graphs[person_id]
+
+                    # if spouse is already in another subgraph, we have to merge subgraphs.
+                    if spouse_id in sub_graphs:
+                        spouse_sg_name = sub_graphs[spouse_id]
+                        for key, value in sub_graphs.items():
+                            if value == spouse_sg_name:
+                                sub_graphs[key] = sg_name
+
+
+                if spouse_id in sub_graphs:
+                    sg_name = sub_graphs[spouse_id]
 
                 if sg_name is None:
                     sg_name = f'cluster_{counter}'
                     counter += 1
-                    sub_graphs[family_member] = sg_name
-                    sub_graphs[element] = sg_name
+                sub_graphs[spouse_id] = sg_name
+                sub_graphs[person_id] = sg_name
 
-                pair = str(family_member) + str(element)
+    # Add edges and subgraphs for spouses
+    for family in root_child_elements:
+
+        if isinstance(family, FamilyElement):
+
+            parents = gedcom_parser.get_family_members(family, members_type='PARENTS')
+
+            if len(parents) < 1:
+                continue
+
+            person = parents[0]
+            person_id = str(person).strip()
+
+            for spouse in parents[1:]:
+                sg_name = sub_graphs[person_id]
+
+                spouse_id = str(spouse).strip()
+
+                pair = spouse_id + person_id
 
                 if pair not in pairs:
-                    pair = str(element)+str(family_member)
+                    pair = person_id + spouse_id
                     pairs[pair] = True
                     # display divorced marriages as dashed lines.
                     style = 'solid'
@@ -360,7 +391,7 @@ def gedcom_to_graph(gedcom_filename, label='', labelloc="t", labelsize=100,
                                 divorced = True
 
                             # not sure why, but sometimes the divorce value
-                            # is stored in extra child element
+                            # is stored in extra child person
                             for c2 in c.get_child_elements():
                                 if c2.get_tag() == 'TYPE':
                                     if c2.get_value() == 'Y':
@@ -401,44 +432,46 @@ def gedcom_to_graph(gedcom_filename, label='', labelloc="t", labelsize=100,
 
 
                     # peripheries='0' removes rectangles around subgraphs
-                    graph.add_subgraph((family_member, element, pair),
+                    graph.add_subgraph((spouse, person, pair),
                                        peripheries='0', name=sg_name,
                                        cluster='true', label='')
 
-                    graph.add_edge(pair, element,
+                    graph.add_edge(pair, person,
                                    headport=ports[direction]['head'],
                                    style=style, color="white:black:white",
                                    penwidth=2)
-                    graph.add_edge(pair, family_member,
+                    graph.add_edge(pair, spouse,
                                    headport=ports[direction]['head'],
                                    style=style, color="white:black:white",
                                    penwidth=2)
+
+
 
     print('Creating edges to parents...')
     # Add edges to parents
-    for element in root_child_elements:
+    for person in root_child_elements:
 
-        if isinstance(element, IndividualElement):
+        if isinstance(person, IndividualElement):
 
-            parents = gedcom_parser.get_parents(element)
+            parents = gedcom_parser.get_parents(person)
 
             if len(parents)<1:
                 continue
 
             if len(parents)==2:
 
-                pair = str(parents[0]) + str(parents[1])
+                pair = str(parents[0]).strip() + str(parents[1]).strip()
                 if pair in pairs:
-                    graph.add_edge(element, pair,
+                    graph.add_edge(person, pair,
                                    headport=ports[direction]['head'],
                                    tailport=ports[direction]['tail'],
                                    splines=None, color="white:black:white",
                                    penwidth=2)
                     continue
 
-                pair = str(parents[1]) + str(parents[0])
+                pair = str(parents[1]).strip() + str(parents[0]).strip()
                 if pair in pairs:
-                    graph.add_edge(element, pair,
+                    graph.add_edge(person, pair,
                                    headport=ports[direction]['head'],
                                    tailport=ports[direction]['tail'],
                                    splines=None, color="white:black:white",
@@ -447,7 +480,7 @@ def gedcom_to_graph(gedcom_filename, label='', labelloc="t", labelsize=100,
 
             else:
                 for parent in parents:
-                    graph.add_edge(element, parent,
+                    graph.add_edge(person, parent,
                                    headport=ports[direction]['head'],
                                    tailport=ports[direction]['tail'],
                                    splines=None, color="white:black:white",

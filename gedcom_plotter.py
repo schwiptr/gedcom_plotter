@@ -265,7 +265,7 @@ def gedcom_to_graph(gedcom_filename, label='', labelloc="t", labelsize=100,
     ns = NodeSize(gedcom_parser)
 
     graph = pgv.AGraph(rankdir=direction, label=label, labelloc=labelloc,
-                       fontsize=labelsize, mclimit=1, searchsize=30)#, splines = 'true')
+                       fontsize=labelsize)
 
     # Add all indiviudals to graph
     n_people = 0
@@ -349,37 +349,48 @@ def gedcom_to_graph(gedcom_filename, label='', labelloc="t", labelsize=100,
                     # display divorced marriages as dashed lines.
                     style = 'solid'
                     marriage_label = ''
+                    divorced = False
                     for c in family.get_child_elements():
 
                         # check if couple is divorced
                         if c.get_tag() == 'DIV':
 
                             if c.get_value() == 'Y':
-                                style = 'dashed'
                                 marriage_label = '⚮'
+                                divorced = True
 
                             # not sure why, but sometimes the divorce value
                             # is stored in extra child element
                             for c2 in c.get_child_elements():
                                 if c2.get_tag() == 'TYPE':
                                     if c2.get_value() == 'Y':
-                                        style = 'dashed'
                                         marriage_label = '⚮'
+                                        divorced = True
                                 if c2.get_tag() == 'DATE':
                                     year = c2.get_value().split()[-1]
                                     if len(year) == 4 and year.isdigit():
                                         marriage_label = f'<⚮<BR/><FONT POINT-SIZE="10.0">{year}</FONT>>'
 
-                        # check if couple is married
-                        elif c.get_tag() == 'MARR':
-                            marriage_label = '⚭'
+                            break
 
-                            for c2 in c.get_child_elements():
-                                if c2.get_tag() == 'DATE':
-                                    year = c2.get_value().split()[-1]
-                                    if len(year) == 4 and year.isdigit():
-                                        marriage_label = f'<⚭<BR/><FONT POINT-SIZE="10.0">{year}</FONT>>'
+                    if divorced:
+                        style = 'dashed'
+                    # only check for marriage record if there was no divorce
+                    else:
+                        for c in family.get_child_elements():
+                            # check if couple is married
+                            if c.get_tag() == 'MARR':
+                                marriage_label = '⚭'
 
+                                for c2 in c.get_child_elements():
+                                    if c2.get_tag() == 'DATE':
+                                        year = c2.get_value().split()[-1]
+                                        if len(year) == 4 and year.isdigit():
+                                            marriage_label = f'<⚭<BR/><FONT POINT-SIZE="10.0">{year}</FONT>>'
+
+                    # Couples are always connected by a "pair" node. Married
+                    # couples get a ⚭ symbol, divorced couples a ⚮ symbol
+                    # and all other just a 'point'
                     if marriage_label == '':
                         graph.add_node(pair, xlabel=marriage_label, shape='point',
                                        fixedsize='true', width=0.1, height=0.1)
@@ -390,9 +401,9 @@ def gedcom_to_graph(gedcom_filename, label='', labelloc="t", labelsize=100,
 
 
                     # peripheries='0' removes rectangles around subgraphs
-                    graph.add_subgraph((family_member, element),
-                                   peripheries='0', name=sg_name,
-                                   cluster='true', label='')
+                    graph.add_subgraph((family_member, element, pair),
+                                       peripheries='0', name=sg_name,
+                                       cluster='true', label='')
 
                     graph.add_edge(pair, element,
                                    headport=ports[direction]['head'],

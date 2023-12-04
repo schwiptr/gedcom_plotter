@@ -1,6 +1,7 @@
 # gedcom_plotter
 
-Plot a family tree stored in a gedcom file using graphviz
+Plot a family tree stored in a gedcom file using graphviz.  
+See an example [here](example/Bible+Family+Tree.svg?raw=true) (based on the gecom file [Bible+Family+Tree.ged](https://sourceforge.net/projects/godskingsheroes/files/ged%20files/religious%20figures%20and%20systems/)).
 
 ## Installation
 

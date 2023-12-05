@@ -1,0 +1,7 @@
+[project]
+name = 'gedcom_plotter'
+version = '0.0.1'
+dependencies = [
+    'pygraphviz',
+    'python-gedcom',
+]

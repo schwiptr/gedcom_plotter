@@ -16,4 +16,6 @@ Tested in Ubuntu 22:
     pip3 install git+ssh://git@github.com/schwiptr/gedcom_plotter.git
 
 ## Usage
-See `gedcom_plotter.py --help`
+See `gedcom_plotter --help` for details.  
+The example above was created using this command:  
+`gedcom_plotter Bible+Family+Tree.ged -o Bible+Family+Tree.svg -e gray`

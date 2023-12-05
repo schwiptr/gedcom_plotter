@@ -5,3 +5,6 @@ dependencies = [
     'pygraphviz',
     'python-gedcom',
 ]
+
+[project.scripts]
+gedcom_plotter = 'gedcom_plotter:main'

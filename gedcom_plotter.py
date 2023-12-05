@@ -495,7 +495,7 @@ def gedcom_to_graph(gedcom_filename, label='', labelloc="t", labelsize=100,
 
     return graph
 
-if __name__ == '__main__':
+def main():
 
     import sys
     import argparse
@@ -576,3 +576,6 @@ if __name__ == '__main__':
         G.draw(output_filename)
 
     print(f'Created {output_filename}')
+
+if __name__ == '__main__':
+    main()

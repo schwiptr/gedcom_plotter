@@ -2,8 +2,8 @@
 name = 'gedcom_plotter'
 version = '0.0.1'
 dependencies = [
-    'pygraphviz',
-    'python-gedcom',
+    'pygraphviz>=1.11',
+    'python-gedcom>=1.0.0',
 ]
 
 [project.scripts]

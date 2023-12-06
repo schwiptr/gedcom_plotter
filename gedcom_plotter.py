@@ -13,7 +13,9 @@ from gedcom.parser import Parser
 class NodeSize():
     """ calculation of node size for given text
     """
-    def __init__(self, gedcom_parser, margin=None):
+    def __init__(self, gedcom_parser, node_attributes, margin=None):
+
+        self.node_attributes = node_attributes
 
         all_names = []
         all_names.append(' .')
@@ -45,7 +47,9 @@ class NodeSize():
         time_string = '<<FONT COLOR="gray15" POINT-SIZE="10.0">1234567890-</FONT>>'
 
         graph = pgv.AGraph(rankdir='BT')
-        graph.add_node(1, label=time_string, shape='box', style='rounded',
+        graph.add_node(1, label=time_string,
+                       shape=node_attributes['shape'],
+                       style=node_attributes['style'],
                        width=0, height=0)
         graph.layout('dot')
         node = graph.get_node(1)
@@ -59,7 +63,9 @@ class NodeSize():
 
         for char in all_chars:
             graph = pgv.AGraph(rankdir='BT')#, splines = 'true')
-            graph.add_node(1, label=char, shape='box', style='rounded',
+            graph.add_node(1, label=char,
+                           shape=node_attributes['shape'],
+                           style=node_attributes['style'],
                            width=0, height=0)
             graph.layout('dot')
             node = graph.get_node(1)
@@ -68,7 +74,9 @@ class NodeSize():
 
             graph = pgv.AGraph(rankdir='BT')
             graph.add_node(1, label=char + char + '\n' + char + char,
-                           shape='box', style='rounded', width=0, height=0)
+                           shape=node_attributes['shape'],
+                           style=node_attributes['style'],
+                           width=0, height=0)
             graph.layout('dot')
             node = graph.get_node(1)
             two_chars_width = float(node.attr['width'])
@@ -163,6 +171,9 @@ def limit_text_to_width(text, max_width, ns):
             if longest_line[-3:] == '...':
                 longest_line = longest_line[:-3]
 
+            if len(longest_line) < 1:
+                return ''
+
             lines[longest_line_index] = longest_line[:-1] + '...'
 
         text = '\n'.join(lines)
@@ -175,6 +186,7 @@ def format_name(person, max_width, max_height, ns):
     :param person: gedcom individual
     :param max_width: maximum width of node
     :param max_height: maximum width of node
+    :param ns: NodeSize object, needed to truncate node text
     :return: formatted text
     """
 
@@ -203,23 +215,33 @@ def format_name(person, max_width, max_height, ns):
     if time_string != '':
         time_string = f'<BR/><FONT COLOR="gray15" POINT-SIZE="10.0">{time_string}</FONT>'
 
-    # quick and dirty name, + birth/death dates
+    # quick and dirty name + birth/death dates
+    # (will overflow shapes)
     #return f'<{first_name}<BR/>{last_name}{time_string}>'.replace('&', '&amp;')
 
-    text = ''
-
     height = max_height + 1
+
     while height > max_height:
 
-        first_name = limit_text_to_width(first_name, max_width, ns)
-        last_name  = limit_text_to_width(last_name, max_width, ns)
+        text = ''
+
+        new_first_name = limit_text_to_width(first_name, max_width, ns)
+        new_last_name  = limit_text_to_width(last_name, max_width, ns)
+
+        if new_first_name != first_name or new_last_name != last_name:
+            name_changed = True
+            first_name = new_first_name
+            last_name = new_last_name
+        else:
+            name_changed = False
 
         if first_name != '':
             text = first_name
         if last_name != '':
             text = text + '\n' + last_name
 
-        width, height = ns.get_size(text, time_string!='')
+        new_width, new_height = ns.get_size(text, time_string!='')
+
         text = text + time_string
         text = text.replace('\n', '<BR/>')
         text = text.replace('&', '&amp;')
@@ -235,18 +257,38 @@ def format_name(person, max_width, max_height, ns):
 
         # remove a line from the longer name part
         if last_name.count('\n') >= first_name.count('\n'):
-            last_name = last_name[:last_name.rfind('\n')]
-            last_name = last_name+'...'
+            if last_name.rfind('\n') != -1:
+                last_name = last_name[:last_name.rfind('\n')]
+                last_name = last_name+'...'
         else:
-            first_name = first_name[:first_name.rfind('\n')]
-            first_name = first_name+'...'
+            if first_name.rfind('\n') != -1:
+                first_name = first_name[:first_name.rfind('\n')]
+                first_name = first_name+'...'
+
+        # if name and height does not change anymore, we entered infinite loop
+        # (probably shape is not high enough for more than one line)
+        if new_height == height and not name_changed:
+            print(f'WARNING: Problem truncating text of {person.get_name()} for shape. Try different shape or bigger shape size.')
+            break
+
+        height = new_height
+
+    if text == '<>' and (person.get_name()[0] != '' or person.get_name()[1] != ''):
+        print(f'WARNING: Problem truncating text of {person.get_name()} for shape. Try different shape or bigger shape size.')
 
     return text
 
 def gedcom_to_graph(gedcom_filename, label='', labelloc="t", labelsize=100,
-                    direction='BT'):
+                    direction='BT', node_attributes={},
+                    fillcolor={'M':'#bce0f0', 'F':'#f8e3eb', 'O':'#fbfbcc'}):
     """ Generate family tree graph for a given gedcom file
     :param gedcom_filename: name of input gedcom file
+    :param label: title of plot
+    :param labelloc: location of title
+    :param labelsize: font size of title
+    :param direction: direction of plot
+    :param node_attributes: node attributes like shape, style, etc.
+    :param fillcolor: dictionary with color values for Male, Female, Other
     :return: pygraphviz graph containing family tree graph
     """
 
@@ -254,15 +296,21 @@ def gedcom_to_graph(gedcom_filename, label='', labelloc="t", labelsize=100,
         print(f'Input file {gedcom_filename} not found.')
         return None
 
-    node_width = 2
-    node_height = 1.15
-
     gedcom_parser = Parser()
     gedcom_parser.parse_file(gedcom_filename, False) # Disable strict parsing
     root_child_elements = gedcom_parser.get_root_child_elements()
 
+    default_node_attributes = {'shape':'box',
+                               'style':'rounded,filled',
+                               'fixedsize':'true',
+                               'width':2,
+                               'height':1.15}
+
+    for key, value in node_attributes.items():
+        default_node_attributes[key] = node_attributes[key]
+
     print('Initializing text size estimation...')
-    ns = NodeSize(gedcom_parser)
+    ns = NodeSize(gedcom_parser, default_node_attributes)
 
     graph = pgv.AGraph(rankdir=direction, label=label, labelloc=labelloc,
                        fontsize=labelsize)
@@ -284,18 +332,16 @@ def gedcom_to_graph(gedcom_filename, label='', labelloc="t", labelsize=100,
 
         if isinstance(person, IndividualElement):
 
-            if person.get_gender() == 'M':
-                color = '#bce0f0'
-            elif person.get_gender() == 'F':
-                color = '#f8e3eb'
-            else:
-                color = '#fbfbcc'
+            if 'fillcolor' not in node_attributes.keys():
+                default_node_attributes['fillcolor'] = \
+                    fillcolor.get(person.get_gender(), fillcolor['O'])
 
-            name = format_name(person, node_width, node_height, ns)
+            name = format_name(person,
+                               default_node_attributes['width'],
+                               default_node_attributes['height'],
+                               ns)
 
-            graph.add_node(person, label=name, shape='box', style='rounded,filled',
-                           fixedsize='true', width=node_width, height=node_height,
-                           fillcolor=color)
+            graph.add_node(person, label=name, **default_node_attributes)
 
     #print('\r', end='')
     print('Creating edges to spouses...')
@@ -507,12 +553,16 @@ def main():
                         help='Input gedcom file.')
     parser.add_argument('-o', '--output_filename',
                         help='Output plot. See graphviz documentation for supported formats. If not specified, a PNG image is created.')
-    parser.add_argument('-t', '--title', default='',
-                        help='Title of the output plot.')
     parser.add_argument('-e', '--edgepaint', default=None,
                         help='If set, overlapping edges are painted according to given color scheme, e.g. rgb, gray, lab, dark28, etc.')
     parser.add_argument('-r', '--rankdir', default='BT', choices=['BT', 'TB', 'LR', 'RL'],
                         help='Direction of plot, e.g. "LR" for Left to Right. Default is "BT" for Bottom to Top.')
+    parser.add_argument('-n', '--node_attributes', nargs='*', default=[],
+                        help='Node attributes, e.g. shape=ellipse style=rounded,filled')
+    parser.add_argument('-f', '--fillcolor', nargs='*', default=[],
+                        help='Fill color for Male, Female, Other. Default: M=#bce0f0 F=#f8e3eb O=#fbfbcc')
+    parser.add_argument('-t', '--title', default='',
+                        help='Title of the output plot.')
     parser.add_argument('-tl', '--titleloc', default='t',
                         help='Location of title. Possible values: t, b')
     parser.add_argument('-ts', '--titlesize', default=100,
@@ -520,9 +570,35 @@ def main():
 
     args = parser.parse_args()
 
-    G = gedcom_to_graph(args.gedcom_filename, label=args.title,
-                        labelloc=args.titleloc, labelsize=args.titlesize,
-                        direction=args.rankdir)
+    node_attributes = {}
+
+    for arg in args.node_attributes:
+
+        key, value = arg.rsplit('=', 1)
+
+        if value.replace('.','',1).isdigit():
+            value = float(value)
+
+        node_attributes[key] = value
+
+    fillcolor={'M':'#bce0f0', 'F':'#f8e3eb', 'O':'#fbfbcc'}
+    for arg in args.fillcolor:
+
+        key, value = arg.rsplit('=', 1)
+
+        if key[0] not in ('M', 'F', 'O'):
+            print(f'Invalid fillcolor specified: {key[0]}. Must be one of M, F, O')
+            sys.exit(1)
+
+        fillcolor[key[0]] = value
+
+    G = gedcom_to_graph(args.gedcom_filename,
+                        label=args.title,
+                        labelloc=args.titleloc,
+                        labelsize=args.titlesize,
+                        direction=args.rankdir,
+                        node_attributes=node_attributes,
+                        fillcolor=fillcolor)
 
     if G is None:
         print('Failed to generate graph.')
@@ -564,7 +640,6 @@ def main():
             del dot_filename
             del tmpdir
             G.from_string(edgepaint_ret.stdout.decode("utf-8"))
-
 
     print('Plotting output...')
 

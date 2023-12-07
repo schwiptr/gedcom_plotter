@@ -3,6 +3,7 @@
 """ Quick and dirty plotting of a family tree stored in a gedcom file
 """
 
+import sys
 import math
 import os.path
 import pygraphviz as pgv
@@ -194,7 +195,7 @@ def format_name(person, max_width, max_height, ns):
     (first_name, last_name) = person.get_name()
 
     if first_name == '' and last_name=='':
-        print(f'WARNING: Name is empty for {person}.')
+        print(f'WARNING: Name is empty for record {person.get_pointer()} {person.get_tag()}.')
 
     birth_year = person.get_birth_year()
     death_year = person.get_death_year()
@@ -252,8 +253,8 @@ def format_name(person, max_width, max_height, ns):
 #        graph.add_node(1, label=text, shape='box', style='rounded')
 #        graph.layout('dot')
 #        node = graph.get_node(1)
-#        #width = float(node.attr['width'])
-#        height = float(node.attr['height'])
+#        #new_width = float(node.attr['width'])
+#        new_height = float(node.attr['height'])
 
         # remove a line from the longer name part
         if last_name.count('\n') >= first_name.count('\n'):
@@ -278,14 +279,14 @@ def format_name(person, max_width, max_height, ns):
 
     return text
 
-def gedcom_to_graph(gedcom_filename, label='', labelloc="t", labelsize=100,
+def gedcom_to_graph(gedcom_filename, title='', titleloc="t", titlesize=100,
                     direction='BT', node_attributes={},
                     fillcolor={'M':'#bce0f0', 'F':'#f8e3eb', 'O':'#fbfbcc'}):
     """ Generate family tree graph for a given gedcom file
     :param gedcom_filename: name of input gedcom file
-    :param label: title of plot
-    :param labelloc: location of title
-    :param labelsize: font size of title
+    :param title: title of plot
+    :param titleloc: location of title
+    :param titlesize: font size of title
     :param direction: direction of plot
     :param node_attributes: node attributes like shape, style, etc.
     :param fillcolor: dictionary with color values for Male, Female, Other
@@ -312,8 +313,8 @@ def gedcom_to_graph(gedcom_filename, label='', labelloc="t", labelsize=100,
     print('Initializing text size estimation...')
     ns = NodeSize(gedcom_parser, default_node_attributes)
 
-    graph = pgv.AGraph(rankdir=direction, label=label, labelloc=labelloc,
-                       fontsize=labelsize)
+    graph = pgv.AGraph(rankdir=direction, label=title, labelloc=titleloc,
+                       fontsize=titlesize)
 
     # Add all indiviudals to graph
     n_people = 0
@@ -322,6 +323,9 @@ def gedcom_to_graph(gedcom_filename, label='', labelloc="t", labelsize=100,
             n_people += 1
 
     print(f'Family tree contains {n_people} people.')
+
+    if n_people < 1:
+        return None
 
     print('Creating nodes...')
     #counter = 0
@@ -365,7 +369,8 @@ def gedcom_to_graph(gedcom_filename, label='', labelloc="t", labelsize=100,
 
         if isinstance(family, FamilyElement):
 
-            parents = gedcom_parser.get_family_members(family, members_type='PARENTS')
+            parents = gedcom_parser.get_family_members(family,
+                                                       members_type='PARENTS')
 
             if len(parents) < 1:
                 continue
@@ -405,7 +410,8 @@ def gedcom_to_graph(gedcom_filename, label='', labelloc="t", labelsize=100,
 
         if isinstance(family, FamilyElement):
 
-            parents = gedcom_parser.get_family_members(family, members_type='PARENTS')
+            parents = gedcom_parser.get_family_members(family,
+                                                       members_type='PARENTS')
 
             if len(parents) < 1:
                 continue
@@ -541,9 +547,48 @@ def gedcom_to_graph(gedcom_filename, label='', labelloc="t", labelsize=100,
 
     return graph
 
-def main():
+def run_edgepaint(G, color_scheme):
+    """ Run edgepaint on graph
+    :param G: input graph
+    :param color_scheme: graphviz color scheme to apply to edges
+    :return: graph with painted edges or None if there was a problem
+    """
 
-    import sys
+    import shutil
+    if shutil.which('edgepaint') is None:
+        print('WARNING: Cannot find edgepaint executable.')
+        return None
+
+    else:
+
+        print('Running edgepaint...')
+        import subprocess
+        import tempfile
+
+        tmpdir = tempfile.TemporaryDirectory()
+        dot_filename = os.path.join(tmpdir.name, 'tmp.dot')
+
+        G.draw(dot_filename)
+        edgepaint_ret = subprocess.run(['edgepaint',
+                                        '-share_endpoint',
+                                        '-color_scheme='+color_scheme,
+                                        dot_filename], capture_output=True)
+
+        if edgepaint_ret.returncode != 0:
+            print('edgepaint failed with error:')
+            print(edgepaint_ret.stderr.decode("utf-8"))
+            return None
+
+        del dot_filename
+        del tmpdir
+        G.from_string(edgepaint_ret.stdout.decode("utf-8"))
+
+    return G
+
+def main():
+    """ gedcom_plotter command line program
+    """
+
     import argparse
 
     parser = argparse.ArgumentParser(prog='gedcom_plotter',
@@ -593,9 +638,9 @@ def main():
         fillcolor[key[0]] = value
 
     G = gedcom_to_graph(args.gedcom_filename,
-                        label=args.title,
-                        labelloc=args.titleloc,
-                        labelsize=args.titlesize,
+                        title=args.title,
+                        titleloc=args.titleloc,
+                        titlesize=args.titlesize,
                         direction=args.rankdir,
                         node_attributes=node_attributes,
                         fillcolor=fillcolor)
@@ -612,34 +657,12 @@ def main():
         output_filename = output_filename + '.png'
 
     if args.edgepaint:
+        G = run_edgepaint(G, args.edgepaint)
 
-        import shutil
-        if shutil.which('edgepaint') is None:
-            print('WARNING: Cannot find edgepaint executable.')
+        if G is None:
+            print('Failed to paint edges.')
+            sys.exit(1)
 
-        else:
-
-            print('Running edgepaint...')
-            import subprocess
-            import tempfile
-
-            tmpdir = tempfile.TemporaryDirectory()
-            dot_filename = os.path.join(tmpdir.name, 'tmp.dot')
-
-            G.draw(dot_filename)
-            edgepaint_ret = subprocess.run(['edgepaint',
-                                            '-share_endpoint',
-                                            '-color_scheme='+args.edgepaint,
-                                            dot_filename], capture_output=True)
-
-            if edgepaint_ret.returncode != 0:
-                print('edgepaint failed with error:')
-                print(edgepaint_ret.stderr.decode("utf-8"))
-                sys.exit(1)
-
-            del dot_filename
-            del tmpdir
-            G.from_string(edgepaint_ret.stdout.decode("utf-8"))
 
     print('Plotting output...')
 

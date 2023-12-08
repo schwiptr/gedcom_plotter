@@ -274,7 +274,8 @@ def format_name(person, max_width, max_height, ns):
 
         height = new_height
 
-    if text == '<>' and (person.get_name()[0] != '' or person.get_name()[1] != ''):
+    if text == '<>' and (person.get_name()[0] != '' or
+                         person.get_name()[1] != ''):
         print(f'WARNING: Problem truncating text of {person.get_name()} for shape. Try different shape or bigger shape size.')
 
     return text
@@ -347,11 +348,11 @@ def gedcom_to_graph(gedcom_filename, title='', titleloc="t", titlesize=100,
 
             graph.add_node(person, label=name, **default_node_attributes)
 
+    del ns
     #print('\r', end='')
-    print('Creating edges to spouses...')
 
+    # sub_graph maps persons to spouse clusters
     sub_graphs = {}
-    pairs = {}
 
     ports = {'BT': {'head': 's',
                     'tail': 'n'},
@@ -361,6 +362,8 @@ def gedcom_to_graph(gedcom_filename, title='', titleloc="t", titlesize=100,
                     'tail': 'e'},
              'RL': {'head': 'e',
                     'tail': 'w'}}
+
+    print('Clustering spouses...')
 
     # Identify all married persons and put them in the same cluster.
     # Not trivial if more than one of the persons maried multiple times
@@ -376,11 +379,12 @@ def gedcom_to_graph(gedcom_filename, title='', titleloc="t", titlesize=100,
                 continue
 
             person = parents[0]
-            person_id = str(person).strip()
+            person_id = person.get_pointer()
 
-            for spouse in parents[1:]:
+            if len(parents) > 1:
 
-                spouse_id = str(spouse).strip()
+                spouse = parents[1]
+                spouse_id = spouse.get_pointer()
 
                 # add edge for spouse
 
@@ -388,7 +392,8 @@ def gedcom_to_graph(gedcom_filename, title='', titleloc="t", titlesize=100,
                 if person_id in sub_graphs:
                     sg_name = sub_graphs[person_id]
 
-                    # if spouse is already in another subgraph, we have to merge subgraphs.
+                    # if spouse is already in another subgraph, we have to
+                    # merge subgraphs.
                     if spouse_id in sub_graphs:
                         spouse_sg_name = sub_graphs[spouse_id]
                         for key, value in sub_graphs.items():
@@ -405,7 +410,10 @@ def gedcom_to_graph(gedcom_filename, title='', titleloc="t", titlesize=100,
                 sub_graphs[spouse_id] = sg_name
                 sub_graphs[person_id] = sg_name
 
-    # Add edges and subgraphs for spouses
+    print('Creating edges between spouses...')
+
+    pairs = {}
+
     for family in root_child_elements:
 
         if isinstance(family, FamilyElement):
@@ -413,91 +421,94 @@ def gedcom_to_graph(gedcom_filename, title='', titleloc="t", titlesize=100,
             parents = gedcom_parser.get_family_members(family,
                                                        members_type='PARENTS')
 
-            if len(parents) < 1:
+            if len(parents) < 2:
                 continue
 
             person = parents[0]
-            person_id = str(person).strip()
+            person_id = person.get_pointer()
 
-            for spouse in parents[1:]:
-                sg_name = sub_graphs[person_id]
+            spouse = parents[1]
+            spouse_id = spouse.get_pointer()
 
-                spouse_id = str(spouse).strip()
+            pair = spouse_id + person_id
 
-                pair = spouse_id + person_id
+            if pair not in pairs:
+                pair = person_id + spouse_id
+                pairs[pair] = True
+                style = 'solid'
+                marriage_label = ''
+                divorced = False
+                for c in family.get_child_elements():
 
-                if pair not in pairs:
-                    pair = person_id + spouse_id
-                    pairs[pair] = True
-                    # display divorced marriages as dashed lines.
-                    style = 'solid'
-                    marriage_label = ''
-                    divorced = False
+                    # check if couple is divorced
+                    if c.get_tag() == 'DIV':
+
+                        if c.get_value() == 'Y':
+                            marriage_label = '⚮'
+                            divorced = True
+
+                        # not sure why, but sometimes the divorce value
+                        # is stored in extra child person
+                        for c2 in c.get_child_elements():
+
+                            if c2.get_tag() == 'TYPE':
+                                if c2.get_value() == 'Y':
+                                    marriage_label = '⚮'
+                                    divorced = True
+
+                            if c2.get_tag() == 'DATE':
+                                year = c2.get_value().split()[-1]
+                                if len(year) == 4 and year.isdigit():
+                                    marriage_label = f'<⚮<BR/><FONT POINT-SIZE="10.0">{year}</FONT>>'
+
+                        break
+
+                # display divorced marriages as dashed lines.
+                if divorced:
+                    style = 'dashed'
+
+                # only check for marriage record if there was no divorce
+                else:
                     for c in family.get_child_elements():
+                        # check if couple is married
+                        if c.get_tag() == 'MARR':
+                            marriage_label = '⚭'
 
-                        # check if couple is divorced
-                        if c.get_tag() == 'DIV':
-
-                            if c.get_value() == 'Y':
-                                marriage_label = '⚮'
-                                divorced = True
-
-                            # not sure why, but sometimes the divorce value
-                            # is stored in extra child person
                             for c2 in c.get_child_elements():
-                                if c2.get_tag() == 'TYPE':
-                                    if c2.get_value() == 'Y':
-                                        marriage_label = '⚮'
-                                        divorced = True
                                 if c2.get_tag() == 'DATE':
                                     year = c2.get_value().split()[-1]
                                     if len(year) == 4 and year.isdigit():
-                                        marriage_label = f'<⚮<BR/><FONT POINT-SIZE="10.0">{year}</FONT>>'
+                                        marriage_label = f'<⚭<BR/><FONT POINT-SIZE="10.0">{year}</FONT>>'
 
-                            break
-
-                    if divorced:
-                        style = 'dashed'
-                    # only check for marriage record if there was no divorce
-                    else:
-                        for c in family.get_child_elements():
-                            # check if couple is married
-                            if c.get_tag() == 'MARR':
-                                marriage_label = '⚭'
-
-                                for c2 in c.get_child_elements():
-                                    if c2.get_tag() == 'DATE':
-                                        year = c2.get_value().split()[-1]
-                                        if len(year) == 4 and year.isdigit():
-                                            marriage_label = f'<⚭<BR/><FONT POINT-SIZE="10.0">{year}</FONT>>'
-
-                    # Couples are always connected by a "pair" node. Married
-                    # couples get a ⚭ symbol, divorced couples a ⚮ symbol
-                    # and all other just a 'point'
-                    if marriage_label == '':
-                        graph.add_node(pair, xlabel=marriage_label, shape='point',
-                                       fixedsize='true', width=0.1, height=0.1)
-                    else:
-                        graph.add_node(pair, label=marriage_label,
-                                       shape='plaintext', width=0,
-                                       height=0, margin=0.01)
+                # Couples are always connected by a "pair" node. Married
+                # couples get a ⚭ symbol, divorced couples a ⚮ symbol
+                # and all others a 'point'
+                if marriage_label == '':
+                    graph.add_node(pair, xlabel=marriage_label, shape='point',
+                                   fixedsize='true', width=0.1, height=0.1)
+                else:
+                    graph.add_node(pair, label=marriage_label,
+                                   shape='plaintext', width=0,
+                                   height=0, margin=0.01)
 
 
-                    # peripheries='0' removes rectangles around subgraphs
-                    graph.add_subgraph((spouse, person, pair),
-                                       peripheries='0', name=sg_name,
-                                       cluster='true', label='')
+                # peripheries='0' removes rectangles around subgraphs
+                graph.add_subgraph((spouse, person, pair),
+                                   peripheries='0', name=sub_graphs[person_id],
+                                   cluster='true', label='')
 
-                    graph.add_edge(pair, person,
-                                   headport=ports[direction]['head'],
-                                   style=style, color="white:black:white",
-                                   penwidth=2)
-                    graph.add_edge(pair, spouse,
-                                   headport=ports[direction]['head'],
-                                   style=style, color="white:black:white",
-                                   penwidth=2)
+                graph.add_edge(pair, person,
+                               headport=ports[direction]['head'],
+                               style=style, color="white:black:white",
+                               penwidth=2)
+                graph.add_edge(pair, spouse,
+                               headport=ports[direction]['head'],
+                               style=style, color="white:black:white",
+                               penwidth=2)
 
+    print(f'Graph contains {len(graph.edges())} edges.')
 
+    del sub_graphs
 
     print('Creating edges to parents...')
     # Add edges to parents
@@ -512,7 +523,7 @@ def gedcom_to_graph(gedcom_filename, title='', titleloc="t", titlesize=100,
 
             if len(parents)==2:
 
-                pair = str(parents[0]).strip() + str(parents[1]).strip()
+                pair = parents[0].get_pointer() + parents[1].get_pointer()
                 if pair in pairs:
                     graph.add_edge(person, pair,
                                    headport=ports[direction]['head'],
@@ -531,6 +542,7 @@ def gedcom_to_graph(gedcom_filename, title='', titleloc="t", titlesize=100,
                     continue
 
             else:
+                # TODO: is the loop really necessary?
                 for parent in parents:
                     graph.add_edge(person, parent,
                                    headport=ports[direction]['head'],
@@ -540,6 +552,8 @@ def gedcom_to_graph(gedcom_filename, title='', titleloc="t", titlesize=100,
 
     del root_child_elements
     del gedcom_parser
+
+    print(f'Graph contains {len(graph.edges())} edges.')
 
     print('Creating layout...')
     #graph.layout('dot', args='-v4')
@@ -559,29 +573,27 @@ def run_edgepaint(G, color_scheme):
         print('WARNING: Cannot find edgepaint executable.')
         return None
 
-    else:
+    print('Running edgepaint...')
+    import subprocess
+    import tempfile
 
-        print('Running edgepaint...')
-        import subprocess
-        import tempfile
+    tmpdir = tempfile.TemporaryDirectory()
+    dot_filename = os.path.join(tmpdir.name, 'tmp.dot')
 
-        tmpdir = tempfile.TemporaryDirectory()
-        dot_filename = os.path.join(tmpdir.name, 'tmp.dot')
+    G.draw(dot_filename)
+    edgepaint_ret = subprocess.run(['edgepaint',
+                                    '-share_endpoint',
+                                    '-color_scheme='+color_scheme,
+                                    dot_filename], capture_output=True)
 
-        G.draw(dot_filename)
-        edgepaint_ret = subprocess.run(['edgepaint',
-                                        '-share_endpoint',
-                                        '-color_scheme='+color_scheme,
-                                        dot_filename], capture_output=True)
+    if edgepaint_ret.returncode != 0:
+        print('edgepaint failed with error:')
+        print(edgepaint_ret.stderr.decode("utf-8"))
+        return None
 
-        if edgepaint_ret.returncode != 0:
-            print('edgepaint failed with error:')
-            print(edgepaint_ret.stderr.decode("utf-8"))
-            return None
-
-        del dot_filename
-        del tmpdir
-        G.from_string(edgepaint_ret.stdout.decode("utf-8"))
+    del dot_filename
+    del tmpdir
+    G.from_string(edgepaint_ret.stdout.decode("utf-8"))
 
     return G
 

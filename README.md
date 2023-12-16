@@ -13,7 +13,7 @@ Tested in Ubuntu 22:
     python3 -m venv env
     source env/bin/activate
 
-    pip3 install git+ssh://git@github.com/schwiptr/gedcom_plotter.git
+    pip3 install git+https://github.com/schwiptr/gedcom_plotter.git
 
 ## Usage
 See `gedcom_plotter --help` for details.  

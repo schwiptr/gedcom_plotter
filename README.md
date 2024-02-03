@@ -48,7 +48,7 @@ To do that, at least the following dependencies have to be installed:
 
 See also [here](https://pygraphviz.github.io/documentation/stable/install.html#windows) the instructions for pygraphviz installation.
 
-Using anaconda/miniconda for the installation in Windows is currently not recommended, as it results in font issues in the output plot
+Using anaconda/miniconda for the installation in Windows is currently not recommended, as it results in font issues in the output plot.
 
 ## Usage
 See `gedcom_plotter --help` for details.

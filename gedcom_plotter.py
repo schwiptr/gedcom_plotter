@@ -280,19 +280,19 @@ def format_name(person, max_width, max_height, ns):
 
     return text
 
-def gedcom_to_graph(gedcom_filename, title='', titleloc="t", titlesize=100,
-                    direction='BT', node_attributes={},
-                    fillcolor={'M':'#bce0f0', 'F':'#f8e3eb', 'O':'#fbfbcc'}):
+def gedcom_to_graph(gedcom_filename,
+                    node_attributes={},
+                    fillcolor={'M':'#bce0f0', 'F':'#f8e3eb', 'O':'#fbfbcc'},
+                    graph_attributes={}):
     """ Generate family tree graph for a given gedcom file
     :param gedcom_filename: name of input gedcom file
-    :param title: title of plot
-    :param titleloc: location of title
-    :param titlesize: font size of title
-    :param direction: direction of plot
     :param node_attributes: node attributes like shape, style, etc.
     :param fillcolor: dictionary with color values for Male, Female, Other
+    :param graph_attributes: dictionary with attributes passed to pgv.AGraph
     :return: pygraphviz graph containing family tree graph
     """
+
+    direction = graph_attributes.get('rankdir', 'TB')
 
     if not os.path.exists(gedcom_filename):
         print(f'Input file {gedcom_filename} not found.')
@@ -314,8 +314,7 @@ def gedcom_to_graph(gedcom_filename, title='', titleloc="t", titlesize=100,
     print('Initializing text size estimation...')
     ns = NodeSize(gedcom_parser, default_node_attributes)
 
-    graph = pgv.AGraph(rankdir=direction, label=title, labelloc=titleloc,
-                       fontsize=titlesize)
+    graph = pgv.AGraph(**graph_attributes)
 
     # Add all indiviudals to graph
     n_people = 0
@@ -414,6 +413,15 @@ def gedcom_to_graph(gedcom_filename, title='', titleloc="t", titlesize=100,
 
     pairs = {}
 
+    marriage_node_attributes = default_node_attributes.copy()
+    # TODO: would be nice if marriage nodes were more customizable.
+    #       Currently, they use same attributes as person labels, minus the
+    #       attributes in the line below
+    for key in ('label', 'xlabel', 'shape', 'width', 'height', 'margin',
+                'fixedsize', 'style', 'fillcolor'):
+        if key in marriage_node_attributes.keys():
+            del marriage_node_attributes[key]
+
     for family in root_child_elements:
 
         if isinstance(family, FamilyElement):
@@ -485,11 +493,13 @@ def gedcom_to_graph(gedcom_filename, title='', titleloc="t", titlesize=100,
                 # and all others a 'point'
                 if marriage_label == '':
                     graph.add_node(pair, xlabel=marriage_label, shape='point',
-                                   fixedsize='true', width=0.1, height=0.1)
+                                   fixedsize='true', width=0.1, height=0.1,
+                                   **marriage_node_attributes)
                 else:
                     graph.add_node(pair, label=marriage_label,
                                    shape='plaintext', width=0,
-                                   height=0, margin=0.01)
+                                   height=0, margin=0.01,
+                                   **marriage_node_attributes)
 
 
                 # peripheries='0' removes rectangles around subgraphs
@@ -604,7 +614,10 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(prog='gedcom_plotter',
-                                     description='Plot family tree defined in given gedcom file.')
+                                     description='Plot family tree defined in given gedcom file. \
+                                     For many of the program arguments below (e.g. node_attributes, \
+                                     graph_attributes), see the graphviz documentation for more \
+                                     details.')
 
     parser.add_argument('gedcom_filename',
                         help='Input gedcom file.')
@@ -612,23 +625,26 @@ def main():
                         help='Output plot. See graphviz documentation for supported formats. If not specified, a PNG image is created.')
     parser.add_argument('-e', '--edgepaint', default=None,
                         help='If set, overlapping edges are painted according to given color scheme, e.g. rgb, gray, lab, dark28, etc.')
-    parser.add_argument('-r', '--rankdir', default='BT', choices=['BT', 'TB', 'LR', 'RL'],
-                        help='Direction of plot, e.g. "LR" for Left to Right. Default is "BT" for Bottom to Top.')
     parser.add_argument('-n', '--node_attributes', nargs='*', default=[],
-                        help='Node attributes, e.g. shape=ellipse style=rounded,filled')
+                        help='Node attributes, e.g. shape=ellipse style=rounded,filled fontname="Comic Sans MS"')
+    parser.add_argument('-g', '--graph_attributes', nargs='*', default=[],
+                        help='Graph attributes passed on to graph initialization, e.g. rankdir=LR label="Family Tree" labelloc=t fontsize=100 fontname="Comic Sans MS"')
     parser.add_argument('-f', '--fillcolor', nargs='*', default=[],
                         help='Fill color for Male, Female, Other. Default: M=#bce0f0 F=#f8e3eb O=#fbfbcc')
-    parser.add_argument('-t', '--title', default='',
-                        help='Title of the output plot.')
-    parser.add_argument('-tl', '--titleloc', default='t',
-                        help='Location of title. Possible values: t, b')
-    parser.add_argument('-ts', '--titlesize', default=100,
-                        help='Font size of title.')
 
     args = parser.parse_args()
 
-    node_attributes = {}
+    graph_attributes = {}
+    for arg in args.graph_attributes:
 
+        key, value = arg.split('=', 1)
+
+        if value.replace('.','',1).isdigit():
+            value = float(value)
+
+        graph_attributes[key] = value
+
+    node_attributes = {}
     for arg in args.node_attributes:
 
         key, value = arg.rsplit('=', 1)
@@ -650,12 +666,9 @@ def main():
         fillcolor[key[0]] = value
 
     G = gedcom_to_graph(args.gedcom_filename,
-                        title=args.title,
-                        titleloc=args.titleloc,
-                        titlesize=args.titlesize,
-                        direction=args.rankdir,
                         node_attributes=node_attributes,
-                        fillcolor=fillcolor)
+                        fillcolor=fillcolor,
+                        graph_attributes=graph_attributes)
 
     if G is None:
         print('Failed to generate graph.')

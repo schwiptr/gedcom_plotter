@@ -53,4 +53,4 @@ Using anaconda/miniconda for the installation in Windows is currently not recomm
 ## Usage
 See `gedcom_plotter --help` for details.
 The example above was created using this command:
-`gedcom_plotter Bible+Family+Tree.ged -o Bible+Family+Tree.svg -e gray`
+`gedcom_plotter Bible+Family+Tree.ged -o Bible+Family+Tree.svg -e gray -g rankdir=BT`

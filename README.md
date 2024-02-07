@@ -46,7 +46,7 @@ To do that, at least the following dependencies have to be installed:
 - Graphviz
 - (git)
 
-See also [here](https://pygraphviz.github.io/documentation/stable/install.html#windows) the instructions for pygraphviz installation.
+See also [here](https://pygit config pull.rebase falsegraphviz.github.io/documentation/stable/install.html#windows) the instructions for pygraphviz installation.
 
 Using anaconda/miniconda for the installation in Windows is currently not recommended, as it results in font issues in the output plot.
 
@@ -55,4 +55,4 @@ See `gedcom_plotter --help` for details.
 The examples above were created using these commands:
 
     gedcom_plotter Bible+Family+Tree.ged -o Bible+Family+Tree.svg -e gray -g rankdir=BT
-    gedcom_plotter.py George+Washington+Family+Big.ged -o George+Washington+Family+Big.svg -g rankdir=LR label="Family Tree of George Washington" labelloc=t fontsize=120 fontname="Z003" -n shape=oval style=filled fontname="Z003" width=2.4 -f M=#9abaed F=lightpink
+    gedcom_plotter George+Washington+Family+Big.ged -o George+Washington+Family+Big.svg -g rankdir=LR label="Family Tree of George Washington" labelloc=t fontsize=120 fontname="Z003" -n shape=oval style=filled fontname="Z003" width=2.4 -f M=#9abaed F=lightpink

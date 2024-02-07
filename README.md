@@ -1,7 +1,7 @@
 # gedcom_plotter
 
 Plot a family tree stored in a gedcom file using graphviz.
-See an example [here](example/Bible+Family+Tree.svg?raw=true) (based on the gedcom file [Bible+Family+Tree.ged](https://sourceforge.net/projects/godskingsheroes/files/ged%20files/religious%20figures%20and%20systems/)).
+See examples [here](examples/Bible+Family+Tree.svg?raw=true) and [here](examples/George+Washington+Family+Big.svg?raw=true) (based on gedcom files from [here](https://sourceforge.net/projects/godskingsheroes)).
 
 ## Installation
 
@@ -52,5 +52,6 @@ Using anaconda/miniconda for the installation in Windows is currently not recomm
 
 ## Usage
 See `gedcom_plotter --help` for details.
-The example above was created using this command:
-`gedcom_plotter Bible+Family+Tree.ged -o Bible+Family+Tree.svg -e gray`
+The examples above were created using these commands:
+    gedcom_plotter Bible+Family+Tree.ged -o Bible+Family+Tree.svg -e gray -g rankdir=BT
+    gedcom_plotter.py George+Washington+Family+Big.ged -o George+Washington+Family+Big.svg -g rankdir=LR label="Family Tree of George Washington" labelloc=t fontsize=120 fontname="Z003" -n shape=oval style=filled fontname="Z003" width=2.4 -f M=#9abaed F=lightpink

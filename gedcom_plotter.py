@@ -294,6 +294,10 @@ def gedcom_to_graph(gedcom_filename,
 
     direction = graph_attributes.get('rankdir', 'TB')
 
+    if direction not in ('TB', 'BT', 'LR', 'RL'):
+        print(f'Invalid rankdir of {direction} specified. Must be one of: BT, TB, LR, RL')
+        return None
+
     if not os.path.exists(gedcom_filename):
         print(f'Input file {gedcom_filename} not found.')
         return None
@@ -628,7 +632,7 @@ def main():
     parser.add_argument('-n', '--node_attributes', nargs='*', default=[],
                         help='Node attributes, e.g. shape=ellipse style=rounded,filled fontname="Comic Sans MS"')
     parser.add_argument('-g', '--graph_attributes', nargs='*', default=[],
-                        help='Graph attributes passed on to graph initialization, e.g. rankdir=LR label="Family Tree" labelloc=t fontsize=100 fontname="Comic Sans MS"')
+                        help='Graph attributes, e.g. rankdir=LR label="Family Tree" labelloc=t fontsize=100 fontname="Comic Sans MS"')
     parser.add_argument('-f', '--fillcolor', nargs='*', default=[],
                         help='Fill color for Male, Female, Other. Default: M=#bce0f0 F=#f8e3eb O=#fbfbcc')
 

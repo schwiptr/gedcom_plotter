@@ -440,13 +440,9 @@ def gedcom_to_graph(gedcom_filename,
             person_id = person.get_pointer()
 
             spouse = parents[1]
-            spouse_id = spouse.get_pointer()
 
-            pair = spouse_id + person_id
-
-            if pair not in pairs:
-                pair = person_id + spouse_id
-                pairs[pair] = True
+            if family not in pairs:
+                pairs[family] = True
                 style = 'solid'
                 marriage_label = ''
                 divorced = False
@@ -496,26 +492,26 @@ def gedcom_to_graph(gedcom_filename,
                 # couples get a ⚭ symbol, divorced couples a ⚮ symbol
                 # and all others a 'point'
                 if marriage_label == '':
-                    graph.add_node(pair, xlabel=marriage_label, shape='point',
+                    graph.add_node(family, xlabel=marriage_label, shape='point',
                                    fixedsize='true', width=0.1, height=0.1,
                                    **marriage_node_attributes)
                 else:
-                    graph.add_node(pair, label=marriage_label,
+                    graph.add_node(family, label=marriage_label,
                                    shape='plaintext', width=0,
                                    height=0, margin=0.01,
                                    **marriage_node_attributes)
 
 
                 # peripheries='0' removes rectangles around subgraphs
-                graph.add_subgraph((spouse, person, pair),
+                graph.add_subgraph((spouse, person, family),
                                    peripheries='0', name=sub_graphs[person_id],
                                    cluster='true', label='')
 
-                graph.add_edge(pair, person,
+                graph.add_edge(family, person,
                                headport=ports[direction]['head'],
                                style=style, color="white:black:white",
                                penwidth=2)
-                graph.add_edge(pair, spouse,
+                graph.add_edge(family, spouse,
                                headport=ports[direction]['head'],
                                style=style, color="white:black:white",
                                penwidth=2)
@@ -530,39 +526,49 @@ def gedcom_to_graph(gedcom_filename,
 
         if isinstance(person, IndividualElement):
 
-            parents = gedcom_parser.get_parents(person)
+            families = gedcom_parser.get_families(person, family_type='FAMC')
 
-            if len(parents)<1:
-                continue
+            # child can belong to more than one family if it was adopted:
+            for family in families:
 
-            if len(parents)==2:
+#                # check if child is adopted:
+#                # TODO: edge of child adopted by both parents could be
+#                #       displayed dotted/dashed or with special symbol.
+#                #       No idea how to display edge for child adopted by one
+#                #       of the parents only though.
+#                for c in person.get_child_elements():
+#                    if c.get_tag() == 'FAMC':
+#
+#                        if c.get_value() != family.get_pointer():
+#                            continue
+#
+#                        for c2 in c.get_child_elements():
+#                            if c2.get_tag() == 'PEDI':
+#                                if c2.get_value() == 'ADOPTED':
+#                                    print(f'Adopted by {family.get_pointer()}')
+#                                    # TODO: identify who adopted child, using
+#                                    #       ADOP tag: BOTH|HUSB|WIFE
 
-                pair = parents[0].get_pointer() + parents[1].get_pointer()
-                if pair in pairs:
-                    graph.add_edge(person, pair,
+                if family in pairs:
+                    graph.add_edge(person, family,
                                    headport=ports[direction]['head'],
                                    tailport=ports[direction]['tail'],
                                    splines=None, color="white:black:white",
                                    penwidth=2)
                     continue
 
-                pair = str(parents[1]).strip() + str(parents[0]).strip()
-                if pair in pairs:
-                    graph.add_edge(person, pair,
-                                   headport=ports[direction]['head'],
-                                   tailport=ports[direction]['tail'],
-                                   splines=None, color="white:black:white",
-                                   penwidth=2)
-                    continue
+                # if only one of the parents is known, the child is linked to
+                # that directly, instead of the (non-existent) pair node
+                else:
+                    parents = gedcom_parser.get_family_members(family,
+                                members_type='PARENTS')
 
-            else:
-                # TODO: is the loop really necessary?
-                for parent in parents:
-                    graph.add_edge(person, parent,
-                                   headport=ports[direction]['head'],
-                                   tailport=ports[direction]['tail'],
-                                   splines=None, color="white:black:white",
-                                   penwidth=2)
+                    for parent in parents:
+                        graph.add_edge(person, parent,
+                                       headport=ports[direction]['head'],
+                                       tailport=ports[direction]['tail'],
+                                       splines=None, color="white:black:white",
+                                       penwidth=2)
 
     del root_child_elements
     del gedcom_parser

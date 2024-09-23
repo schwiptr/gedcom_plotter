@@ -280,6 +280,111 @@ def format_name(person, max_width, max_height, ns):
 
     return text
 
+def follow_link(e, gedcom_parser):
+    link = e.get_value()
+
+    if len(link) < 1:
+        return e
+
+    if link[0] == '@' and link[-1] == '@':
+        ele_dict = gedcom_parser.get_element_dictionary()
+        if link in ele_dict.keys():
+            return ele_dict[link]
+
+    return e
+
+def note_to_string(e, gedcom_parser):
+    """ Convert gedcom note entry to string
+    :param e: gedcom note element
+    :param gedcom_parser: parser of current gedcom file
+    :return: Converted string
+    """
+
+    e = follow_link(e, gedcom_parser)
+
+    ret_string = e.get_value()
+
+    if len(ret_string) < 1:
+        return ''
+
+#    # follow reference
+#    if ret_string[0] == '@' and ret_string[-1] == '@':
+#        e = gedcom_parser.get_element_dictionary()[ret_string]
+#        ret_string = e.get_value()
+
+    for c in e.get_child_elements():
+        if c.get_tag() == 'CONT':
+            ret_string = ret_string + '\n' + c.get_value()
+        if c.get_tag() == 'CONC':
+            ret_string = ret_string + c.get_value()
+
+    return ret_string
+
+def source_to_string(e, gedcom_parser):
+
+    ret_string = 'Source:\n'
+
+    for c in e.get_child_elements():
+        c = follow_link(c, gedcom_parser)
+        
+        if c.get_tag() == 'TITL':
+            ret_string = ret_string + c.get_value() + ':\n'
+    
+    for c in e.get_child_elements():
+        c = follow_link(c, gedcom_parser)
+        
+        if c.get_tag() == 'NOTE':
+            ret_string = ret_string + note_to_string(c, gedcom_parser)
+
+    return ret_string
+
+def get_tooltip(e, gedcom_parser):
+    """ Create a tooltip for given element
+    :param e: gedcom note element
+    :param gedcom_parser: parser of current gedcom file
+    :return: Tooltip as string
+    """
+
+    # Tooltip always starts with name:
+    (first_name, last_name) = e.get_name()
+    if first_name == '':
+        ret_string = '?'
+    else:
+        ret_string = first_name
+
+    if last_name != '':
+        ret_string = ret_string + ' ' + last_name
+
+    ret_string = ret_string + '\n'
+
+    # TODO: birth, death, dates and places, etc.
+
+    # check if there is a note at first level:
+    for c in e.get_child_elements():
+
+        c = follow_link(c, gedcom_parser)
+
+        if c.get_tag() == 'NOTE':
+            ret_string = ret_string + note_to_string(c, gedcom_parser)
+
+    # check if there is a note at second level:
+    for c in e.get_child_elements():
+
+        c = follow_link(c, gedcom_parser)
+
+        for c2 in c.get_child_elements():
+
+            c2 = follow_link(c2, gedcom_parser)
+
+            if c2.get_tag() == 'NOTE':
+                if c.get_tag() == 'SOUR':
+                    ret_string = ret_string + source_to_string(c, gedcom_parser)
+                else:
+                    ret_string = ret_string + c.get_tag() + ':\n'   # TODO: this looks ugly (BIRT, DEAT, etc.)
+                    ret_string = ret_string + note_to_string(c2, gedcom_parser)
+
+    return ret_string
+
 def gedcom_to_graph(gedcom_filename,
                     node_attributes={},
                     fillcolor={'M':'#bce0f0', 'F':'#f8e3eb', 'O':'#fbfbcc'},
@@ -349,7 +454,10 @@ def gedcom_to_graph(gedcom_filename,
                                default_node_attributes['height'],
                                ns)
 
-            graph.add_node(person, label=name, **default_node_attributes)
+            graph.add_node(person,
+                           label=name,
+                           #tooltip=get_tooltip(person, gedcom_parser),
+                           **default_node_attributes)
 
     del ns
     #print('\r', end='')
@@ -509,11 +617,11 @@ def gedcom_to_graph(gedcom_filename,
 
                 graph.add_edge(family, person,
                                headport=ports[direction]['head'],
-                               style=style, color="white:black:white",
+                               style=style, color="%s:black:%s" % (graph_attributes['bgcolor'], graph_attributes['bgcolor']),
                                penwidth=2)
                 graph.add_edge(family, spouse,
                                headport=ports[direction]['head'],
-                               style=style, color="white:black:white",
+                               style=style, color="%s:black:%s" % (graph_attributes['bgcolor'], graph_attributes['bgcolor']),
                                penwidth=2)
 
     print(f'Graph contains {len(graph.edges())} edges.')
@@ -553,9 +661,8 @@ def gedcom_to_graph(gedcom_filename,
                     graph.add_edge(person, family,
                                    headport=ports[direction]['head'],
                                    tailport=ports[direction]['tail'],
-                                   splines=None, color="white:black:white",
+                                   splines=None, color="%s:black:%s" % (graph_attributes['bgcolor'], graph_attributes['bgcolor']),
                                    penwidth=2)
-                    continue
 
                 # if only one of the parents is known, the child is linked to
                 # that directly, instead of the (non-existent) pair node
@@ -567,7 +674,7 @@ def gedcom_to_graph(gedcom_filename,
                         graph.add_edge(person, parent,
                                        headport=ports[direction]['head'],
                                        tailport=ports[direction]['tail'],
-                                       splines=None, color="white:black:white",
+                                       splines=None, color="%s:black:%s" % (graph_attributes['bgcolor'], graph_attributes['bgcolor']),
                                        penwidth=2)
 
     del root_child_elements
@@ -644,7 +751,7 @@ def main():
 
     args = parser.parse_args()
 
-    graph_attributes = {}
+    graph_attributes = {'bgcolor': '#ffffffff'}
     for arg in args.graph_attributes:
 
         key, value = arg.split('=', 1)
@@ -705,6 +812,7 @@ def main():
     # https://gitlab.com/graphviz/graphviz/-/issues/1426
     if output_filename[-4:].upper() == '.SVG':
         G.draw(output_filename, format='svg:cairo')
+        #G.draw(output_filename)
     else:
         G.draw(output_filename)
 

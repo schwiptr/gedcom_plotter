@@ -14,9 +14,18 @@ from gedcom.parser import Parser
 class NodeSize():
     """ calculation of node size for given text
     """
-    def __init__(self, gedcom_parser, node_attributes, margin=None):
+    def __init__(self, gedcom_parser, node_attributes,
+                 time_format, margin=None):
 
-        self.node_attributes = node_attributes
+        self.time_format = time_format
+        self.node_attributes = node_attributes.copy()
+
+        # remove width and height, since these should be set automatically
+        if 'width' in self.node_attributes.keys():
+            del self.node_attributes['width']
+        if 'height' in self.node_attributes.keys():
+            del self.node_attributes['height']
+        self.node_attributes['fixedsize'] = False
 
         all_names = []
         all_names.append(' .')
@@ -45,7 +54,7 @@ class NodeSize():
             self.margins_x = margin[0] * 2
             self.margins_y = margin[1] * 2
 
-        time_string = '<<FONT COLOR="gray15" POINT-SIZE="10.0">1234567890-</FONT>>'
+        time_string = f'<<FONT {time_format}>1234567890-</FONT>>'
 
         graph = pgv.AGraph(rankdir='BT')
         graph.add_node(1, label=time_string,
@@ -65,9 +74,7 @@ class NodeSize():
         for char in all_chars:
             graph = pgv.AGraph(rankdir='BT')#, splines = 'true')
             graph.add_node(1, label=char,
-                           shape=node_attributes['shape'],
-                           style=node_attributes['style'],
-                           width=0, height=0)
+                           width=0, height=0, **self.node_attributes)
             graph.layout('dot')
             node = graph.get_node(1)
             one_char_width = float(node.attr['width'])
@@ -75,16 +82,15 @@ class NodeSize():
 
             graph = pgv.AGraph(rankdir='BT')
             graph.add_node(1, label=char + char + '\n' + char + char,
-                           shape=node_attributes['shape'],
-                           style=node_attributes['style'],
-                           width=0, height=0)
+                           width=0, height=0, **self.node_attributes)
             graph.layout('dot')
             node = graph.get_node(1)
             two_chars_width = float(node.attr['width'])
-            two_chars_height= float(node.attr['width'])
+            two_chars_height= float(node.attr['height'])
 
             width_of_one_char = two_chars_width - one_char_width
             height_of_one_char = two_chars_height - one_char_height
+
             self.widths[char] = width_of_one_char
             self.heights[char] = height_of_one_char
             # print('\r' + str(counter * 100. / n_chars) + '%', end='')
@@ -186,11 +192,10 @@ def format_name(person, max_width, max_height, ns):
         with given size
     :param person: gedcom individual
     :param max_width: maximum width of node
-    :param max_height: maximum width of node
+    :param max_height: maximum height of node
     :param ns: NodeSize object, needed to truncate node text
     :return: formatted text
     """
-
 
     (first_name, last_name) = person.get_name()
 
@@ -214,7 +219,7 @@ def format_name(person, max_width, max_height, ns):
 
 
     if time_string != '':
-        time_string = f'<BR/><FONT COLOR="gray15" POINT-SIZE="10.0">{time_string}</FONT>'
+        time_string = f'<BR/><FONT {ns.time_format}>{time_string}</FONT>'
 
     # quick and dirty name + birth/death dates
     # (will overflow shapes)
@@ -269,18 +274,24 @@ def format_name(person, max_width, max_height, ns):
         # if name and height does not change anymore, we entered infinite loop
         # (probably shape is not high enough for more than one line)
         if new_height == height and not name_changed:
-            print(f'WARNING: Problem truncating text of {person.get_name()} for shape. Try different shape or bigger shape size.')
+            print(f'WARNING1: Problem truncating text of {person.get_name()} for shape. Try different shape, bigger shape size or smaller font size.')
             break
 
         height = new_height
 
     if text == '<>' and (person.get_name()[0] != '' or
                          person.get_name()[1] != ''):
-        print(f'WARNING: Problem truncating text of {person.get_name()} for shape. Try different shape or bigger shape size.')
+        print(f'WARNING2: Problem truncating text of {person.get_name()} for shape. Try different shape, bigger shape size or smaller font size.')
 
     return text
 
 def follow_link(e, gedcom_parser):
+    """ Follow a link in a gedcom entry
+    :param e: gedcom element which links to another element
+    :param gedcom_parser: parser of current gedcom file
+    :return: Target of link
+    """
+
     link = e.get_value()
 
     if len(link) < 1:
@@ -321,18 +332,23 @@ def note_to_string(e, gedcom_parser):
     return ret_string
 
 def source_to_string(e, gedcom_parser):
+    """ Convert gedcom source entry to string
+    :param e: gedcom note element
+    :param gedcom_parser: parser of current gedcom file
+    :return: Converted string
+    """
 
     ret_string = 'Source:\n'
 
     for c in e.get_child_elements():
         c = follow_link(c, gedcom_parser)
-        
+
         if c.get_tag() == 'TITL':
             ret_string = ret_string + c.get_value() + ':\n'
-    
+
     for c in e.get_child_elements():
         c = follow_link(c, gedcom_parser)
-        
+
         if c.get_tag() == 'NOTE':
             ret_string = ret_string + note_to_string(c, gedcom_parser)
 
@@ -340,6 +356,7 @@ def source_to_string(e, gedcom_parser):
 
 def get_tooltip(e, gedcom_parser):
     """ Create a tooltip for given element
+    (not fully implemented/tested)
     :param e: gedcom note element
     :param gedcom_parser: parser of current gedcom file
     :return: Tooltip as string
@@ -385,308 +402,345 @@ def get_tooltip(e, gedcom_parser):
 
     return ret_string
 
-def gedcom_to_graph(gedcom_filename,
-                    node_attributes={},
-                    fillcolor={'M':'#bce0f0', 'F':'#f8e3eb', 'O':'#fbfbcc'},
-                    graph_attributes={}):
-    """ Generate family tree graph for a given gedcom file
-    :param gedcom_filename: name of input gedcom file
-    :param node_attributes: node attributes like shape, style, etc.
-    :param fillcolor: dictionary with color values for Male, Female, Other
-    :param graph_attributes: dictionary with attributes passed to pgv.AGraph
-    :return: pygraphviz graph containing family tree graph
+class GedcomPlotter():
+    """ Create plot from gedcom file
     """
 
-    direction = graph_attributes.get('rankdir', 'TB')
+    def __init__(self, gedcom_filename):
+        """
+        :param gedcom_filename: name of input gedcom file
+        """
 
-    if direction not in ('TB', 'BT', 'LR', 'RL'):
-        print(f'Invalid rankdir of {direction} specified. Must be one of: BT, TB, LR, RL')
-        return None
+        self.gedcom_parser = None
+        self.ns = None
 
-    if not os.path.exists(gedcom_filename):
-        print(f'Input file {gedcom_filename} not found.')
-        return None
+        self.default_node_attributes = {'shape':'box',
+                                        'style':'rounded,filled',
+                                        'fixedsize':'true',
+                                        'width':2,
+                                        'height':1.15}
 
-    gedcom_parser = Parser()
-    gedcom_parser.parse_file(gedcom_filename, False) # Disable strict parsing
-    root_child_elements = gedcom_parser.get_root_child_elements()
+        self.time_format = 'COLOR="gray15" POINT-SIZE="10.0"'
 
-    default_node_attributes = {'shape':'box',
-                               'style':'rounded,filled',
-                               'fixedsize':'true',
-                               'width':2,
-                               'height':1.15}
+        if not os.path.exists(gedcom_filename):
+            print(f'Input file {gedcom_filename} not found.')
+            return None
 
-    for key, value in node_attributes.items():
-        default_node_attributes[key] = node_attributes[key]
+        self.gedcom_parser = Parser()
+        self.gedcom_parser.parse_file(gedcom_filename, False) # Disable strict parsing
+        self.root_child_elements = self.gedcom_parser.get_root_child_elements()
 
-    print('Initializing text size estimation...')
-    ns = NodeSize(gedcom_parser, default_node_attributes)
+        n_people = 0
+        for person in self.root_child_elements:
+            if isinstance(person, IndividualElement):
+                n_people += 1
 
-    graph = pgv.AGraph(**graph_attributes)
+        print(f'Family tree contains {n_people} people.')
 
-    # Add all indiviudals to graph
-    n_people = 0
-    for person in root_child_elements:
-        if isinstance(person, IndividualElement):
-            n_people += 1
+        if n_people < 1:
+            return None
 
-    print(f'Family tree contains {n_people} people.')
+    def set_node_attributes(self, node_attributes):
+        """ set node attributes. This method has to be run once before running
+            create_graph. Every time the node attributes or font sizes change,
+            the NodeSize has to be re-estimated.
+        :param node_attributes: node attributes like shape, style, etc.
+        """
 
-    if n_people < 1:
-        return None
+        if self.gedcom_parser is None:
+            print('Gedcom parser not initialized.')
+            return None
 
-    print('Creating nodes...')
-    #counter = 0
-    for person in root_child_elements:
+        for key, value in node_attributes.items():
+            self.default_node_attributes[key] = node_attributes[key]
 
-        #print('\r' + str(int(counter * 100 / n_people)) + '%', end='')
-        #counter += 1
+        # whenever node attributes change, the text size has to be re-estimated
+        print('Initializing text size estimation...')
+        self.ns = NodeSize(self.gedcom_parser,
+                           self.default_node_attributes,
+                           self.time_format)
 
-        if isinstance(person, IndividualElement):
+        return self.ns
 
-            if 'fillcolor' not in node_attributes.keys():
-                default_node_attributes['fillcolor'] = \
+    def create_graph(self,
+                     fillcolor={'M':'#bce0f0', 'F':'#f8e3eb', 'O':'#fbfbcc'},
+                     graph_attributes={}):
+        """ Generate family tree graph for a given gedcom file.
+        Only works if set_node_attributes was run first.
+        :param fillcolor: dictionary with color values for Male, Female, Other
+        :param graph_attributes: dictionary with attributes passed to pgv.AGraph
+        :return: pygraphviz graph containing family tree graph
+        """
+
+        if self.gedcom_parser is None:
+            print('Gedcom parser not initialized.')
+            return None
+
+        if self.ns is None:
+            print('Node sizes not initialized.')
+            return None
+
+        direction = graph_attributes.get('rankdir', 'TB')
+
+        if direction not in ('TB', 'BT', 'LR', 'RL'):
+            print(f'Invalid rankdir of {direction} specified. Must be one of: BT, TB, LR, RL')
+            return None
+
+        graph = pgv.AGraph(**graph_attributes)
+
+        if 'bgcolor' not in graph_attributes.keys():
+            graph_attributes['bgcolor'] = '#ffffffff'
+
+        # Add all indiviudals to graph
+
+        print('Creating nodes...')
+        #counter = 0
+        for person in self.root_child_elements:
+
+            #print('\r' + str(int(counter * 100 / n_people)) + '%', end='')
+            #counter += 1
+
+            if isinstance(person, IndividualElement):
+
+                #if 'fillcolor' not in node_attributes.keys():
+                self.default_node_attributes['fillcolor'] = \
                     fillcolor.get(person.get_gender(), fillcolor['O'])
 
-            name = format_name(person,
-                               default_node_attributes['width'],
-                               default_node_attributes['height'],
-                               ns)
+                name = format_name(person,
+                                   self.default_node_attributes['width'],
+                                   self.default_node_attributes['height'],
+                                   self.ns)
 
-            graph.add_node(person,
-                           label=name,
-                           #tooltip=get_tooltip(person, gedcom_parser),
-                           **default_node_attributes)
+                graph.add_node(person,
+                               label=name,
+                               #tooltip=get_tooltip(person, self.gedcom_parser),
+                               **self.default_node_attributes)
 
-    del ns
-    #print('\r', end='')
+        #print('\r', end='')
 
-    # sub_graph maps persons to spouse clusters
-    sub_graphs = {}
+        # sub_graph maps persons to spouse clusters
+        sub_graphs = {}
 
-    ports = {'BT': {'head': 's',
-                    'tail': 'n'},
-             'TB': {'head': 'n',
-                    'tail': 's'},
-             'LR': {'head': 'w',
-                    'tail': 'e'},
-             'RL': {'head': 'e',
-                    'tail': 'w'}}
+        ports = {'BT': {'head': 's',
+                        'tail': 'n'},
+                 'TB': {'head': 'n',
+                        'tail': 's'},
+                 'LR': {'head': 'w',
+                        'tail': 'e'},
+                 'RL': {'head': 'e',
+                        'tail': 'w'}}
 
-    print('Clustering spouses...')
+        print('Clustering spouses...')
 
-    # Identify all married persons and put them in the same cluster.
-    # Not trivial if more than one of the persons maried multiple times
-    counter = 1
-    for family in root_child_elements:
+        # Identify all married persons and put them in the same cluster.
+        # Not trivial if more than one of the persons maried multiple times
+        counter = 1
+        for family in self.root_child_elements:
 
-        if isinstance(family, FamilyElement):
+            if isinstance(family, FamilyElement):
 
-            parents = gedcom_parser.get_family_members(family,
-                                                       members_type='PARENTS')
+                parents = self.gedcom_parser.get_family_members(family,
+                                                           members_type='PARENTS')
 
-            if len(parents) < 1:
-                continue
+                if len(parents) < 1:
+                    continue
 
-            person = parents[0]
-            person_id = person.get_pointer()
+                person = parents[0]
+                person_id = person.get_pointer()
 
-            if len(parents) > 1:
+                if len(parents) > 1:
+
+                    spouse = parents[1]
+                    spouse_id = spouse.get_pointer()
+
+                    # add edge for spouse
+
+                    sg_name = None
+                    if person_id in sub_graphs:
+                        sg_name = sub_graphs[person_id]
+
+                        # if spouse is already in another subgraph, we have to
+                        # merge subgraphs.
+                        if spouse_id in sub_graphs:
+                            spouse_sg_name = sub_graphs[spouse_id]
+                            for key, value in sub_graphs.items():
+                                if value == spouse_sg_name:
+                                    sub_graphs[key] = sg_name
+
+
+                    if spouse_id in sub_graphs:
+                        sg_name = sub_graphs[spouse_id]
+
+                    if sg_name is None:
+                        sg_name = f'cluster_{counter}'
+                        counter += 1
+                    sub_graphs[spouse_id] = sg_name
+                    sub_graphs[person_id] = sg_name
+
+        print('Creating edges between spouses...')
+
+        pairs = {}
+
+        marriage_node_attributes = self.default_node_attributes.copy()
+        # TODO: would be nice if marriage nodes were more customizable.
+        #       Currently, they use same attributes as person labels, minus the
+        #       attributes in the line below
+        for key in ('label', 'xlabel', 'shape', 'width', 'height', 'margin',
+                    'fixedsize', 'style', 'fillcolor'):
+            if key in marriage_node_attributes.keys():
+                del marriage_node_attributes[key]
+
+        for family in self.root_child_elements:
+
+            if isinstance(family, FamilyElement):
+
+                parents = self.gedcom_parser.get_family_members(family,
+                                                           members_type='PARENTS')
+
+                if len(parents) < 2:
+                    continue
+
+                person = parents[0]
+                person_id = person.get_pointer()
 
                 spouse = parents[1]
-                spouse_id = spouse.get_pointer()
 
-                # add edge for spouse
-
-                sg_name = None
-                if person_id in sub_graphs:
-                    sg_name = sub_graphs[person_id]
-
-                    # if spouse is already in another subgraph, we have to
-                    # merge subgraphs.
-                    if spouse_id in sub_graphs:
-                        spouse_sg_name = sub_graphs[spouse_id]
-                        for key, value in sub_graphs.items():
-                            if value == spouse_sg_name:
-                                sub_graphs[key] = sg_name
-
-
-                if spouse_id in sub_graphs:
-                    sg_name = sub_graphs[spouse_id]
-
-                if sg_name is None:
-                    sg_name = f'cluster_{counter}'
-                    counter += 1
-                sub_graphs[spouse_id] = sg_name
-                sub_graphs[person_id] = sg_name
-
-    print('Creating edges between spouses...')
-
-    pairs = {}
-
-    marriage_node_attributes = default_node_attributes.copy()
-    # TODO: would be nice if marriage nodes were more customizable.
-    #       Currently, they use same attributes as person labels, minus the
-    #       attributes in the line below
-    for key in ('label', 'xlabel', 'shape', 'width', 'height', 'margin',
-                'fixedsize', 'style', 'fillcolor'):
-        if key in marriage_node_attributes.keys():
-            del marriage_node_attributes[key]
-
-    for family in root_child_elements:
-
-        if isinstance(family, FamilyElement):
-
-            parents = gedcom_parser.get_family_members(family,
-                                                       members_type='PARENTS')
-
-            if len(parents) < 2:
-                continue
-
-            person = parents[0]
-            person_id = person.get_pointer()
-
-            spouse = parents[1]
-
-            if family not in pairs:
-                pairs[family] = True
-                style = 'solid'
-                marriage_label = ''
-                divorced = False
-                for c in family.get_child_elements():
-
-                    # check if couple is divorced
-                    if c.get_tag() == 'DIV':
-
-                        if c.get_value() == 'Y':
-                            marriage_label = '⚮'
-                            divorced = True
-
-                        # not sure why, but sometimes the divorce value
-                        # is stored in extra child person
-                        for c2 in c.get_child_elements():
-
-                            if c2.get_tag() == 'TYPE':
-                                if c2.get_value() == 'Y':
-                                    marriage_label = '⚮'
-                                    divorced = True
-
-                            if c2.get_tag() == 'DATE':
-                                year = c2.get_value().split()[-1]
-                                if len(year) == 4 and year.isdigit():
-                                    marriage_label = f'<⚮<BR/><FONT POINT-SIZE="10.0">{year}</FONT>>'
-
-                        break
-
-                # display divorced marriages as dashed lines.
-                if divorced:
-                    style = 'dashed'
-
-                # only check for marriage record if there was no divorce
-                else:
+                if family not in pairs:
+                    pairs[family] = True
+                    style = 'solid'
+                    marriage_label = ''
+                    divorced = False
                     for c in family.get_child_elements():
-                        # check if couple is married
-                        if c.get_tag() == 'MARR':
-                            marriage_label = '⚭'
 
+                        # check if couple is divorced
+                        if c.get_tag() == 'DIV':
+
+                            if c.get_value() == 'Y':
+                                marriage_label = '⚮'
+                                divorced = True
+
+                            # not sure why, but sometimes the divorce value
+                            # is stored in extra child person
                             for c2 in c.get_child_elements():
+
+                                if c2.get_tag() == 'TYPE':
+                                    if c2.get_value() == 'Y':
+                                        marriage_label = '⚮'
+                                        divorced = True
+
                                 if c2.get_tag() == 'DATE':
                                     year = c2.get_value().split()[-1]
                                     if len(year) == 4 and year.isdigit():
-                                        marriage_label = f'<⚭<BR/><FONT POINT-SIZE="10.0">{year}</FONT>>'
+                                        marriage_label = f'<⚮<BR/><FONT POINT-SIZE="10.0">{year}</FONT>>'
 
-                # Couples are always connected by a "pair" node. Married
-                # couples get a ⚭ symbol, divorced couples a ⚮ symbol
-                # and all others a 'point'
-                if marriage_label == '':
-                    graph.add_node(family, xlabel=marriage_label, shape='point',
-                                   fixedsize='true', width=0.1, height=0.1,
-                                   **marriage_node_attributes)
-                else:
-                    graph.add_node(family, label=marriage_label,
-                                   shape='plaintext', width=0,
-                                   height=0, margin=0.01,
-                                   **marriage_node_attributes)
+                            break
+
+                    # display divorced marriages as dashed lines.
+                    if divorced:
+                        style = 'dashed'
+
+                    # only check for marriage record if there was no divorce
+                    else:
+                        for c in family.get_child_elements():
+                            # check if couple is married
+                            if c.get_tag() == 'MARR':
+                                marriage_label = '⚭'
+
+                                for c2 in c.get_child_elements():
+                                    if c2.get_tag() == 'DATE':
+                                        year = c2.get_value().split()[-1]
+                                        if len(year) == 4 and year.isdigit():
+                                            marriage_label = f'<⚭<BR/><FONT POINT-SIZE="10.0">{year}</FONT>>'
+
+                    # Couples are always connected by a "pair" node. Married
+                    # couples get a ⚭ symbol, divorced couples a ⚮ symbol
+                    # and all others a 'point'
+                    if marriage_label == '':
+                        graph.add_node(family, xlabel=marriage_label, shape='point',
+                                       fixedsize='true', width=0.1, height=0.1,
+                                       **marriage_node_attributes)
+                    else:
+                        graph.add_node(family, label=marriage_label,
+                                       shape='plaintext', width=0,
+                                       height=0, margin=0.01,
+                                       **marriage_node_attributes)
 
 
-                # peripheries='0' removes rectangles around subgraphs
-                graph.add_subgraph((spouse, person, family),
-                                   peripheries='0', name=sub_graphs[person_id],
-                                   cluster='true', label='')
+                    # peripheries='0' removes rectangles around subgraphs
+                    graph.add_subgraph((spouse, person, family),
+                                       peripheries='0', name=sub_graphs[person_id],
+                                       cluster='true', label='')
 
-                graph.add_edge(family, person,
-                               headport=ports[direction]['head'],
-                               style=style, color="%s:black:%s" % (graph_attributes['bgcolor'], graph_attributes['bgcolor']),
-                               penwidth=2)
-                graph.add_edge(family, spouse,
-                               headport=ports[direction]['head'],
-                               style=style, color="%s:black:%s" % (graph_attributes['bgcolor'], graph_attributes['bgcolor']),
-                               penwidth=2)
-
-    print(f'Graph contains {len(graph.edges())} edges.')
-
-    del sub_graphs
-
-    print('Creating edges to parents...')
-    # Add edges to parents
-    for person in root_child_elements:
-
-        if isinstance(person, IndividualElement):
-
-            families = gedcom_parser.get_families(person, family_type='FAMC')
-
-            # child can belong to more than one family if it was adopted:
-            for family in families:
-
-#                # check if child is adopted:
-#                # TODO: edge of child adopted by both parents could be
-#                #       displayed dotted/dashed or with special symbol.
-#                #       No idea how to display edge for child adopted by one
-#                #       of the parents only though.
-#                for c in person.get_child_elements():
-#                    if c.get_tag() == 'FAMC':
-#
-#                        if c.get_value() != family.get_pointer():
-#                            continue
-#
-#                        for c2 in c.get_child_elements():
-#                            if c2.get_tag() == 'PEDI':
-#                                if c2.get_value() == 'ADOPTED':
-#                                    print(f'Adopted by {family.get_pointer()}')
-#                                    # TODO: identify who adopted child, using
-#                                    #       ADOP tag: BOTH|HUSB|WIFE
-
-                if family in pairs:
-                    graph.add_edge(person, family,
+                    graph.add_edge(family, person,
                                    headport=ports[direction]['head'],
-                                   tailport=ports[direction]['tail'],
-                                   splines=None, color="%s:black:%s" % (graph_attributes['bgcolor'], graph_attributes['bgcolor']),
+                                   style=style, color="%s:black:%s" % (graph_attributes['bgcolor'], graph_attributes['bgcolor']),
+                                   penwidth=2)
+                    graph.add_edge(family, spouse,
+                                   headport=ports[direction]['head'],
+                                   style=style, color="%s:black:%s" % (graph_attributes['bgcolor'], graph_attributes['bgcolor']),
                                    penwidth=2)
 
-                # if only one of the parents is known, the child is linked to
-                # that directly, instead of the (non-existent) pair node
-                else:
-                    parents = gedcom_parser.get_family_members(family,
-                                members_type='PARENTS')
+        print(f'Graph contains {len(graph.edges())} edges.')
 
-                    for parent in parents:
-                        graph.add_edge(person, parent,
+        del sub_graphs
+
+        print('Creating edges to parents...')
+        # Add edges to parents
+        for person in self.root_child_elements:
+
+            if isinstance(person, IndividualElement):
+
+                families = self.gedcom_parser.get_families(person, family_type='FAMC')
+
+                # child can belong to more than one family if it was adopted:
+                for family in families:
+
+    #                # check if child is adopted:
+    #                # TODO: edge of child adopted by both parents could be
+    #                #       displayed dotted/dashed or with special symbol.
+    #                #       No idea how to display edge for child adopted by one
+    #                #       of the parents only though.
+    #                for c in person.get_child_elements():
+    #                    if c.get_tag() == 'FAMC':
+    #
+    #                        if c.get_value() != family.get_pointer():
+    #                            continue
+    #
+    #                        for c2 in c.get_child_elements():
+    #                            if c2.get_tag() == 'PEDI':
+    #                                if c2.get_value() == 'ADOPTED':
+    #                                    print(f'Adopted by {family.get_pointer()}')
+    #                                    # TODO: identify who adopted child, using
+    #                                    #       ADOP tag: BOTH|HUSB|WIFE
+
+                    if family in pairs:
+                        graph.add_edge(person, family,
                                        headport=ports[direction]['head'],
                                        tailport=ports[direction]['tail'],
                                        splines=None, color="%s:black:%s" % (graph_attributes['bgcolor'], graph_attributes['bgcolor']),
                                        penwidth=2)
 
-    del root_child_elements
-    del gedcom_parser
+                    # if only one of the parents is known, the child is linked to
+                    # that directly, instead of the (non-existent) pair node
+                    else:
+                        parents = self.gedcom_parser.get_family_members(family,
+                                    members_type='PARENTS')
 
-    print(f'Graph contains {len(graph.edges())} edges.')
+                        for parent in parents:
+                            graph.add_edge(person, parent,
+                                           headport=ports[direction]['head'],
+                                           tailport=ports[direction]['tail'],
+                                           splines=None, color="%s:black:%s" % (graph_attributes['bgcolor'], graph_attributes['bgcolor']),
+                                           penwidth=2)
 
-    print('Creating layout...')
-    #graph.layout('dot', args='-v4')
-    graph.layout('dot')
 
-    return graph
+        print(f'Graph contains {len(graph.edges())} edges.')
+
+        print('Creating layout...')
+        #graph.layout('dot', args='-v4')
+        graph.layout('dot')
+
+        return graph
 
 def run_edgepaint(G, color_scheme):
     """ Run edgepaint on graph
@@ -782,10 +836,14 @@ def main():
 
         fillcolor[key[0]] = value
 
-    G = gedcom_to_graph(args.gedcom_filename,
-                        node_attributes=node_attributes,
-                        fillcolor=fillcolor,
-                        graph_attributes=graph_attributes)
+    g2g = GedcomPlotter(args.gedcom_filename)
+
+    if g2g.set_node_attributes(node_attributes) is None:
+        print('Failed to set node attributes.')
+        sys.exit(1)
+
+    G = g2g.create_graph(fillcolor=fillcolor,
+                         graph_attributes=graph_attributes)
 
     if G is None:
         print('Failed to generate graph.')

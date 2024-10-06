@@ -440,7 +440,7 @@ class GedcomPlotter():
         if n_people < 1:
             return None
 
-    def set_node_attributes(self, node_attributes):
+    def set_node_attributes(self, node_attributes={}):
         """ set node attributes. This method has to be run once before running
             create_graph. Every time the node attributes or font sizes change,
             the NodeSize has to be re-estimated.
